@@ -4,21 +4,14 @@ struct InfoView: View {
     @Binding var isPresented: Bool
 
     var body: some View {
-        ZStack {
-            // Dark background with blur - tappable to close
-            Color.black.opacity(0.85)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                        isPresented = false
-                    }
-                }
+        NavigationView {
             ScrollView {
                 VStack(spacing: 30) {
                     // Title
                     Text("Cellular Defense")
                         .font(.system(size: 36, weight: .bold))
                         .foregroundColor(.white)
+                        .padding(.top, 20)
 
                     VStack(alignment: .leading, spacing: 20) {
                         InfoBlock(
@@ -42,17 +35,29 @@ struct InfoView: View {
                         )
                     }
                     .padding(.horizontal, 20)
+                    .padding(.bottom, 50)
                 }
-                .padding(.top, 50)
-                .padding(.bottom, 50)
             }
-            .simultaneousGesture(
-                TapGesture()
-                    .onEnded { _ in
-                        // Prevent taps on scroll content from closing
+            .background(Color.black.opacity(0.95))
+            .scrollContentBackground(.hidden)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        isPresented = false
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 28))
+                            .foregroundColor(.white.opacity(0.7))
                     }
-            )
+                }
+            }
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(Color.black.opacity(0.3), for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
         }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
     }
 }
 
