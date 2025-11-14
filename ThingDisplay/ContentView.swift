@@ -9,12 +9,11 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var showInfo = false
-    @State private var tapCount = 0
-    @State private var lastTapTime = Date()
     @State private var cellPositions: [CellLabelData] = []
     @State private var labelsOpacity: Double = 0.0
     @State private var renderer: MetalRenderer?
     @State private var hideLabelsTask: DispatchWorkItem?
+    @State private var showStartButton = true
 
     var body: some View {
         ZStack {
@@ -23,11 +22,56 @@ struct ContentView: View {
                 cellPositions: $cellPositions,
                 onRendererReady: { metalRenderer in
                     renderer = metalRenderer
+                    // Set up animation completion callback
+                    metalRenderer.onAnimationComplete = {
+                        DispatchQueue.main.async {
+                            withAnimation(.easeIn(duration: 0.5)) {
+                                showStartButton = true
+                            }
+                        }
+                    }
                 }
             )
             .ignoresSafeArea()
             .onTapGesture {
                 handleTap()
+            }
+
+            // Start button overlay
+            if showStartButton {
+                Button(action: {
+                    showStartButton = false
+                    startAnimationSequence()
+                }) {
+                    Text("Start")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 60)
+                        .padding(.vertical, 20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 30)
+                                .fill(Color.blue.opacity(0.8))
+                                .shadow(radius: 10)
+                        )
+                }
+            }
+
+            // Info button in top right corner
+            VStack {
+                HStack {
+                    Spacer()
+                    Button(action: {
+                        withAnimation {
+                            showInfo = true
+                        }
+                    }) {
+                        Image(systemName: "info.circle.fill")
+                            .font(.system(size: 30))
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(20)
+                    }
+                }
+                Spacer()
             }
 
             // Cell labels overlay
@@ -44,27 +88,10 @@ struct ContentView: View {
     }
 
     private func handleTap() {
-        let now = Date()
-        let timeSinceLastTap = now.timeIntervalSince(lastTapTime)
-
-        // Detect double tap (within 0.3 seconds)
-        if timeSinceLastTap < 0.3 {
-            tapCount += 1
-            if tapCount >= 2 {
-                withAnimation {
-                    showInfo = true
-                }
-                tapCount = 0
-                return
-            }
-        } else {
-            tapCount = 1
+        // Tap restarts animation (only if start button was already pressed)
+        if !showStartButton {
+            startAnimationSequence()
         }
-
-        lastTapTime = now
-
-        // Single tap - restart animation
-        startAnimationSequence()
     }
 
     private func startAnimationSequence() {

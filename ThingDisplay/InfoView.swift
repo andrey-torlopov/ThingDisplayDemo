@@ -8,57 +8,58 @@ struct InfoView: View {
             // Dark background with blur
             Color.black.opacity(0.85)
                 .ignoresSafeArea()
-
-            VStack(spacing: 30) {
-                // Title
-                Text("Cellular Defense")
-                    .font(.system(size: 36, weight: .bold))
-                    .foregroundColor(.white)
-
-                VStack(alignment: .leading, spacing: 20) {
-                    InfoBlock(
-                        title: "Capture Process",
-                        description: "Observe the cell's defense mechanism: a healthy cell (blue) detects an intruder cell (red) and begins the neutralization process."
-                    )
-
-                    InfoBlock(
-                        title: "Merging",
-                        description: "The cells approach and merge together. During the merging process, the intruder is neutralized, and its aggressive red color gradually changes to the healthy blue."
-                    )
-
-                    InfoBlock(
-                        title: "Division",
-                        description: "After successfully neutralizing the threat, the cell begins the division process, creating two new healthy cells ready to defend the organism."
-                    )
-
-                    InfoBlock(
-                        title: "Cycle Continues",
-                        description: "The process repeats continuously, demonstrating the organism's remarkable ability for self-defense and regeneration."
-                    )
-                }
-                .padding(.horizontal, 20)
-
-                Spacer()
-
-                // Close button
-                Button(action: {
-                    withAnimation {
-                        isPresented = false
+            
+            VStack {
+                HStack {
+                    Spacer()
+                    // Close button
+                    Button(action: {
+                        withAnimation {
+                            isPresented = false
+                        }
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 30))
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 15)
                     }
-                }) {
-                    Text("Close")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 40)
-                        .padding(.vertical, 15)
-                        .background(
-                            RoundedRectangle(cornerRadius: 25)
-                                .fill(Color.blue.opacity(0.8))
-                        )
+                    .padding(.bottom, 30)
                 }
-                .padding(.bottom, 30)
+                Spacer()
             }
-            .padding(.top, 50)
+            ScrollView {
+                VStack(spacing: 30) {
+                    // Title
+                    Text("Cellular Defense")
+                        .font(.system(size: 36, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    VStack(alignment: .leading, spacing: 20) {
+                        InfoBlock(
+                            title: "Capture Process",
+                            description: "Observe the cell's defense mechanism: a healthy cell (blue) detects an intruder cell (red) and begins the neutralization process."
+                        )
+                        
+                        InfoBlock(
+                            title: "Merging",
+                            description: "The cells approach and merge together. During the merging process, the intruder is neutralized, and its aggressive red color gradually changes to the healthy blue."
+                        )
+                        
+                        InfoBlock(
+                            title: "Division",
+                            description: "After successfully neutralizing the threat, the cell begins the division process, creating two new healthy cells ready to defend the organism."
+                        )
+                        
+                        InfoBlock(
+                            title: "Cycle Continues",
+                            description: "The process repeats continuously, demonstrating the organism's remarkable ability for self-defense and regeneration."
+                        )
+                    }
+                    .padding(.horizontal, 20)
+                }
+                .padding(.top, 50)
+            }
         }
     }
 }

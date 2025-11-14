@@ -24,12 +24,16 @@ class Cell {
     var mergeStartTime: Float = 0
     var divideStartTime: Float = 0
 
+    // Store initial position for floating animation
+    var initialPosition: SIMD3<Float>
+
     private var vertexBuffer: MTLBuffer?
     private var indexBuffer: MTLBuffer?
     private var indexCount: Int = 0
 
     init(position: SIMD3<Float>, color: SIMD4<Float>, type: CellType, device: MTLDevice) {
         self.position = position
+        self.initialPosition = position
         self.color = color
         self.type = type
 
@@ -223,10 +227,12 @@ class Cell {
     }
 
     func update(time: Float) {
-        // Gentle floating animation
+        // Gentle floating animation - only apply when in initial moving state
         if animationState == .moving {
             rotation += 0.01
-            position.y = sin(time * 0.5) * 0.1
+            // Add subtle floating effect relative to initial position
+            let floatOffset = sin(time * 0.5 + initialPosition.y * 3.0) * 0.02
+            position.y = initialPosition.y + floatOffset
         }
     }
 

@@ -25,10 +25,14 @@ class MetalRenderer: NSObject, MTKViewDelegate {
 
     // For label positioning
     var onCellPositionsUpdated: (([CellLabelData]) -> Void)?
+    var onAnimationComplete: (() -> Void)?
     private var viewSize: CGSize = .zero
 
     // Target cell for invader
     private var targetHealthyCellIndex: Int = 0
+
+    // Cell size - 20% of min(width, height)
+    private var cellRadius: Float = 0.2
 
     init?(metalView: MTKView) {
         guard let device = MTLCreateSystemDefaultDevice(),
@@ -94,24 +98,29 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     func setupCells() {
-        // Two healthy cells (blue) - positioned in different depths
+        // Get initial aspect ratio estimate (will be updated in mtkView)
+        // For iPhone portrait: aspect ≈ 0.46, for landscape ≈ 2.16
+        // We'll use a safe default and update positions dynamically
+
+        // Two healthy cells (blue) - positioned on the left side
+        // These positions will be updated based on actual aspect ratio
         let healthyCell1 = Cell(
-            position: SIMD3<Float>(-2.5, 0.8, -1.0),  // Top left, back
+            position: SIMD3<Float>(0.15, 0.35, 0),
             color: SIMD4<Float>(0.3, 0.5, 0.9, 0.9),
             type: .healthy,
             device: device
         )
 
         let healthyCell2 = Cell(
-            position: SIMD3<Float>(-2.5, -0.8, 1.0),  // Bottom left, front
+            position: SIMD3<Float>(0.15, 0.65, 0),
             color: SIMD4<Float>(0.3, 0.5, 0.9, 0.9),
             type: .healthy,
             device: device
         )
 
-        // Invader cell (red-orange, angular)
+        // Invader cell (red-orange, angular) - positioned on the right side
         let invaderCell = Cell(
-            position: SIMD3<Float>(2.5, 0, 0),
+            position: SIMD3<Float>(0.35, 0.5, 0),
             color: SIMD4<Float>(0.9, 0.3, 0.2, 0.9),
             type: .invader,
             device: device
@@ -125,10 +134,22 @@ class MetalRenderer: NSObject, MTKViewDelegate {
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         viewSize = size
+
+        // Update cell radius based on screen size (20% of min dimension)
+        let minDimension = Float(min(size.width, size.height))
+        cellRadius = 0.2 * (minDimension / Float(size.height))
+
+        // Update all cells scale
+        for cell in cells {
+            cell.scale = cellRadius
+        }
     }
 
     func draw(in view: MTKView) {
-        time += 1.0 / 60.0
+        // Only increment time if animation is running
+        if isAnimationRunning {
+            time += 1.0 / 60.0
+        }
         updateCells()
 
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
@@ -141,12 +162,20 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         renderEncoder.setDepthStencilState(depthState)
 
         let aspect = Float(view.bounds.width / view.bounds.height)
-        let projectionMatrix = float4x4(perspectiveWithAspect: aspect, fovy: 60.0, near: 0.1, far: 100.0)
+        // Use orthographic projection for 2D-like positioning
+        let projectionMatrix = float4x4(
+            orthographicWithLeft: 0,
+            right: aspect,
+            bottom: 0,
+            top: 1,
+            near: -10,
+            far: 10
+        )
 
-        // Camera positioned at an angle to see depth (like microscope view)
-        let cameraPosition = SIMD3<Float>(0, 3, 8)
+        // Camera looking straight down (2D view)
+        let cameraPosition = SIMD3<Float>(aspect * 0.5, 0.5, 5)
         let viewMatrix = float4x4(lookAt: cameraPosition,
-                                   target: SIMD3<Float>(0, 0, 0),
+                                   target: SIMD3<Float>(aspect * 0.5, 0.5, 0),
                                    up: SIMD3<Float>(0, 1, 0))
 
         // Render all cells
@@ -208,18 +237,22 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     func resetCells() {
-        // Reset all cells to initial state
+        // Reset all cells to initial state (normalized screen coordinates)
         cells[0].animationState = .moving
         cells[1].animationState = .moving
         cells[2].animationState = .moving
 
-        cells[0].scale = 1.0
-        cells[1].scale = 1.0
-        cells[2].scale = 1.0
+        cells[0].scale = cellRadius
+        cells[1].scale = cellRadius
+        cells[2].scale = cellRadius
 
-        cells[0].position = SIMD3<Float>(-2.5, 0.8, -1.0)
-        cells[1].position = SIMD3<Float>(-2.5, -0.8, 1.0)
-        cells[2].position = SIMD3<Float>(2.5, 0, 0)
+        cells[0].position = SIMD3<Float>(0.15, 0.35, 0)
+        cells[1].position = SIMD3<Float>(0.15, 0.65, 0)
+        cells[2].position = SIMD3<Float>(0.35, 0.5, 0)
+
+        cells[0].initialPosition = SIMD3<Float>(0.15, 0.35, 0)
+        cells[1].initialPosition = SIMD3<Float>(0.15, 0.65, 0)
+        cells[2].initialPosition = SIMD3<Float>(0.35, 0.5, 0)
 
         cells[0].color = SIMD4<Float>(0.3, 0.5, 0.9, 0.9)
         cells[1].color = SIMD4<Float>(0.3, 0.5, 0.9, 0.9)
@@ -238,14 +271,14 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     func updateCells() {
         guard cells.count >= 3 else { return }
 
-        // Only update if animation is running
-        if !isAnimationRunning {
-            return
-        }
-
-        // Update all cells
+        // Update all cells (for floating animation)
         for cell in cells {
             cell.update(time: time)
+        }
+
+        // Only process animation state machine if animation is running
+        if !isAnimationRunning {
+            return
         }
 
         let targetCell = cells[targetHealthyCellIndex]
@@ -257,40 +290,52 @@ class MetalRenderer: NSObject, MTKViewDelegate {
             let moveDuration: Float = 3.0
             let moveProgress = min(time / moveDuration, 1.0)
 
-            // Invader moves to target
-            let startPos = SIMD3<Float>(2.5, 0, 0)
+            // Invader moves to target from position (0.35, 0.5)
+            let startPos = SIMD3<Float>(0.35, 0.5, 0)
             invaderCell.position = mix(startPos, targetCell.position, t: moveProgress)
 
             let distance = simd_distance(targetCell.position, invaderCell.position)
-            if distance < 0.5 || moveProgress >= 1.0 {
+            if distance < 0.05 || moveProgress >= 1.0 {
                 targetCell.animationState = .merging
                 invaderCell.animationState = .merging
                 targetCell.mergeStartTime = time
                 invaderCell.mergeStartTime = time
             }
         } else if targetCell.animationState == .merging && invaderCell.animationState == .merging {
-            // Merge cells - invader changes form to sphere but stays red
-            let mergeDuration: Float = 2.0
+            // Absorption animation - invader absorbs healthy cell
+            let mergeDuration: Float = 2.5
             let mergeProgress = (time - targetCell.mergeStartTime) / mergeDuration
 
             if mergeProgress < 1.0 {
-                // Interpolate positions
-                let mergePos = (targetCell.position + invaderCell.position) * 0.5
+                // Invader stays in place, healthy cell shrinks and moves into invader
+                let mergePos = invaderCell.position
                 targetCell.position = mix(targetCell.position, mergePos, t: mergeProgress)
-                invaderCell.position = mix(invaderCell.position, mergePos, t: mergeProgress)
 
-                // At halfway point, change invader form to sphere but keep red
+                // Healthy cell shrinks as it's absorbed
+                targetCell.scale = cellRadius * (1.0 - mergeProgress)
+
+                // Invader grows slightly during absorption
+                invaderCell.scale = cellRadius * (1.0 + 0.2 * mergeProgress)
+
+                // At halfway point, change invader form to sphere
                 if mergeProgress > 0.5 && invaderCell.type == .invader {
                     invaderCell.type = .healthy  // Change geometry to sphere
                     invaderCell.color = SIMD4<Float>(0.9, 0.3, 0.2, 0.9)  // But keep red color
                     invaderCell.createGeometry(device: device)
                 }
+
+                // Rotate invader during absorption
+                invaderCell.rotation += 0.05
             } else {
-                // Merge complete, start color change and then dividing
+                // Absorption complete, start color change and then dividing
                 targetCell.animationState = .dividing
                 invaderCell.animationState = .dividing
                 targetCell.divideStartTime = time
                 invaderCell.divideStartTime = time
+
+                // Reset target cell to prepare for division
+                targetCell.scale = cellRadius
+                targetCell.position = invaderCell.position
             }
         } else if targetCell.animationState == .dividing && invaderCell.animationState == .dividing {
             // Color change and division phase
@@ -320,25 +365,26 @@ class MetalRenderer: NSObject, MTKViewDelegate {
                 let targetPos2: SIMD3<Float>
 
                 if targetHealthyCellIndex == 0 {
-                    // Cells move apart in different directions
-                    targetPos1 = SIMD3<Float>(-2.5, 0.8, -1.0)   // Top left, back
-                    targetPos2 = SIMD3<Float>(-1.5, -1.2, 0.5)   // Bottom, slightly right, front
+                    // Target was at (0.15, 0.35) - cells move apart
+                    targetPos1 = SIMD3<Float>(0.10, 0.30, 0)   // Slightly left and down
+                    targetPos2 = SIMD3<Float>(0.20, 0.40, 0)   // Slightly right and up
                 } else {
-                    // Cells move apart in different directions
-                    targetPos1 = SIMD3<Float>(-1.5, 1.2, 0.5)    // Top, slightly right, front
-                    targetPos2 = SIMD3<Float>(-2.5, -0.8, -1.0)  // Bottom left, back
+                    // Target was at (0.15, 0.65) - cells move apart
+                    targetPos1 = SIMD3<Float>(0.10, 0.60, 0)   // Slightly left and down
+                    targetPos2 = SIMD3<Float>(0.20, 0.70, 0)   // Slightly right and up
                 }
 
                 targetCell.position = mix(mergePos, targetPos1, t: divideProgress)
                 invaderCell.position = mix(mergePos, targetPos2, t: divideProgress)
 
-                // Scale during division
-                let scale = 0.6 + 0.4 * divideProgress
+                // Scale during division - return to normal size
+                let scale = cellRadius * (0.6 + 0.4 * divideProgress)  // Scale from 0.6 to 1.0 of cellRadius
                 targetCell.scale = scale
                 invaderCell.scale = scale
             } else {
                 // Division complete, stop animation
                 isAnimationRunning = false
+                onAnimationComplete?()
             }
         }
     }
@@ -371,6 +417,19 @@ extension float4x4 {
             SIMD4<Float>(0, yScale, 0, 0),
             SIMD4<Float>(0, 0, zScale, -1),
             SIMD4<Float>(0, 0, wzScale, 0)
+        )
+    }
+
+    init(orthographicWithLeft left: Float, right: Float, bottom: Float, top: Float, near: Float, far: Float) {
+        let width = right - left
+        let height = top - bottom
+        let depth = far - near
+
+        self.init(
+            SIMD4<Float>(2.0 / width, 0, 0, 0),
+            SIMD4<Float>(0, 2.0 / height, 0, 0),
+            SIMD4<Float>(0, 0, -2.0 / depth, 0),
+            SIMD4<Float>(-(right + left) / width, -(top + bottom) / height, -(far + near) / depth, 1)
         )
     }
 
