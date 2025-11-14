@@ -61,7 +61,7 @@ struct ContentView: View {
                 HStack {
                     Spacer()
                     Button(action: {
-                        withAnimation {
+                        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
                             showInfo = true
                         }
                     }) {
@@ -73,17 +73,16 @@ struct ContentView: View {
                 }
                 Spacer()
             }
+            .zIndex(50)
 
             // Cell labels overlay
             CellLabelView(cellPositions: cellPositions)
                 .opacity(labelsOpacity)
                 .allowsHitTesting(false)
-
-            // Info overlay
-            if showInfo {
-                InfoView(isPresented: $showInfo)
-                    .transition(.opacity)
-            }
+        }
+        .sheet(isPresented: $showInfo) {
+            InfoView(isPresented: $showInfo)
+                .presentationBackground(.black.opacity(0.85))
         }
     }
 

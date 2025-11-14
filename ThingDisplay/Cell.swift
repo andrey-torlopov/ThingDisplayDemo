@@ -102,32 +102,33 @@ class Cell {
         createBuffers(vertices: vertices, normals: normals, indices: indices, device: device)
     }
 
-    // Create angular invader cell (three-pointed star like Mercedes logo)
+    // Create angular invader cell (three-pointed star like Mercedes logo / spaceship)
     func createInvaderCellGeometry(device: MTLDevice) {
         var vertices: [SIMD3<Float>] = []
         var normals: [SIMD3<Float>] = []
         var indices: [UInt16] = []
 
-        // Create three main spikes extending from center (like Mercedes three-pointed star)
+        // Create three sharp spikes (like Mercedes logo / spaceship)
         let spikeCount = 3
-        let centerRadius: Float = 0.3
-        let spikeLength: Float = 1.2
+        let centerRadius: Float = 0.25
+        let spikeLength: Float = 1.3
+        let spikeHeight: Float = 0.25  // More pronounced 3D shape
 
         // Center point
         let center = SIMD3<Float>(0, 0, 0)
 
         // Create spikes at 120 degree intervals
         for spike in 0..<spikeCount {
-            let angle = Float(spike) * 2.0 * .pi / Float(spikeCount)
+            let angle = Float(spike) * 2.0 * .pi / Float(spikeCount) - .pi / 2.0  // Rotate to point one spike forward
 
-            // Spike tip
+            // Spike tip - sharper and longer
             let tipX = spikeLength * cos(angle)
             let tipZ = spikeLength * sin(angle)
             let tip = SIMD3<Float>(tipX, 0, tipZ)
 
-            // Base corners of spike
-            let leftAngle = angle - .pi / 6.0
-            let rightAngle = angle + .pi / 6.0
+            // Base corners of spike - narrower for more angular look
+            let leftAngle = angle - .pi / 8.0  // Narrower angle
+            let rightAngle = angle + .pi / 8.0
 
             let leftX = centerRadius * cos(leftAngle)
             let leftZ = centerRadius * sin(leftAngle)
@@ -137,13 +138,13 @@ class Cell {
             let rightZ = centerRadius * sin(rightAngle)
             let right = SIMD3<Float>(rightX, 0, rightZ)
 
-            // Create top and bottom faces for each spike
-            for yOffset in [-0.15, 0.15] as [Float] {
+            // Create top and bottom faces for each spike with more height
+            for yOffset in [-spikeHeight, spikeHeight] as [Float] {
                 let baseIndex = UInt16(vertices.count)
 
                 // Add vertices with Y offset
                 let centerY = SIMD3<Float>(center.x, yOffset, center.z)
-                let tipY = SIMD3<Float>(tip.x, yOffset, tip.z)
+                let tipY = SIMD3<Float>(tip.x, yOffset * 0.5, tip.z)  // Tips less tall for sleeker look
                 let leftY = SIMD3<Float>(left.x, yOffset, left.z)
                 let rightY = SIMD3<Float>(right.x, yOffset, right.z)
 
@@ -181,7 +182,7 @@ class Cell {
                 }
             }
 
-            // Add side faces
+            // Add side faces with proper normals
             let topBaseIndex = UInt16(vertices.count - 8)
             let bottomBaseIndex = UInt16(vertices.count - 4)
 
@@ -227,8 +228,22 @@ class Cell {
     }
 
     func update(time: Float) {
-        // Gentle floating animation - only apply when in initial moving state
-        if animationState == .moving {
+        // Animation effects based on cell type and state
+        if type == .invader && animationState == .moving {
+            // Aggressive rotation for invader
+            rotation += 0.03
+
+            // Pulsing effect - invader breathes menacingly
+            let pulseSpeed: Float = 4.0
+            let pulseAmount: Float = 0.08
+            let pulse = sin(time * pulseSpeed) * pulseAmount
+            scale = scale * (1.0 + pulse)
+
+            // Subtle hover movement
+            let floatOffset = sin(time * 2.0) * 0.015
+            position.y = initialPosition.y + floatOffset
+        } else if type == .healthy && animationState == .moving {
+            // Gentle floating animation for healthy cells
             rotation += 0.01
             // Add subtle floating effect relative to initial position
             let floatOffset = sin(time * 0.5 + initialPosition.y * 3.0) * 0.02

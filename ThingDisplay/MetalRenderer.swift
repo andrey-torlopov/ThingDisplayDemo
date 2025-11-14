@@ -324,13 +324,20 @@ class MetalRenderer: NSObject, MTKViewDelegate {
 
         // Animation state machine
         if targetCell.animationState == .moving && invaderCell.animationState == .moving {
-            // Move invader towards target healthy cell
-            let moveDuration: Float = 3.0
+            // Move invader towards target healthy cell with acceleration
+            let moveDuration: Float = 2.5
             let moveProgress = min(time / moveDuration, 1.0)
+
+            // Apply easing for more dramatic approach
+            let easedProgress = easeInOutCubic(moveProgress)
 
             // Invader moves to target from position (0.58, 0.5) in screen space
             let startPos = worldPosition(for: invaderNormalizedStart)
-            invaderCell.position = mix(startPos, targetCell.position, t: moveProgress)
+            invaderCell.position = mix(startPos, targetCell.position, t: easedProgress)
+
+            // Scale invader slightly as it approaches (getting ready to attack)
+            let approachScale = 1.0 + sin(moveProgress * .pi) * 0.15
+            invaderCell.scale = cellRadius * approachScale
 
             let distance = simd_distance(targetCell.position, invaderCell.position)
             if distance < 0.05 || moveProgress >= 1.0 {
@@ -341,19 +348,32 @@ class MetalRenderer: NSObject, MTKViewDelegate {
             }
         } else if targetCell.animationState == .merging && invaderCell.animationState == .merging {
             // Absorption animation - invader absorbs healthy cell
-            let mergeDuration: Float = 2.5
+            let mergeDuration: Float = 2.0
             let mergeProgress = (time - targetCell.mergeStartTime) / mergeDuration
+            let easedMerge = easeInOutCubic(mergeProgress)
 
             if mergeProgress < 1.0 {
                 // Invader stays in place, healthy cell shrinks and moves into invader
                 let mergePos = invaderCell.position
-                targetCell.position = mix(targetCell.position, mergePos, t: mergeProgress)
+                targetCell.position = mix(targetCell.position, mergePos, t: easedMerge)
 
-                // Healthy cell shrinks as it's absorbed
-                targetCell.scale = cellRadius * (1.0 - mergeProgress)
+                // Healthy cell shrinks as it's absorbed with spiral motion
+                targetCell.scale = cellRadius * (1.0 - easedMerge)
 
-                // Invader grows slightly during absorption
-                invaderCell.scale = cellRadius * (1.0 + 0.2 * mergeProgress)
+                // Add spiral motion to absorbed cell
+                let spiralAngle = mergeProgress * .pi * 4.0
+                let spiralRadius = (1.0 - mergeProgress) * 0.1
+                let offsetX = cos(spiralAngle) * spiralRadius
+                let offsetY = sin(spiralAngle) * spiralRadius
+                targetCell.position.x += offsetX
+                targetCell.position.y += offsetY
+
+                // Rotate absorbed cell faster as it's consumed
+                targetCell.rotation += 0.1 * (1.0 + mergeProgress * 3.0)
+
+                // Invader grows and pulses during absorption
+                let pulsation = sin(mergeProgress * .pi * 6.0) * 0.05
+                invaderCell.scale = cellRadius * (1.0 + 0.3 * mergeProgress + pulsation)
 
                 // At halfway point, change invader form to sphere
                 if mergeProgress > 0.5 && invaderCell.type == .invader {
@@ -362,8 +382,8 @@ class MetalRenderer: NSObject, MTKViewDelegate {
                     invaderCell.createGeometry(device: device)
                 }
 
-                // Rotate invader during absorption
-                invaderCell.rotation += 0.05
+                // Rotate invader aggressively during absorption
+                invaderCell.rotation += 0.08
             } else {
                 // Absorption complete, start color change and then dividing
                 targetCell.animationState = .dividing
@@ -372,28 +392,39 @@ class MetalRenderer: NSObject, MTKViewDelegate {
                 invaderCell.divideStartTime = time
 
                 // Reset target cell to prepare for division
-                targetCell.scale = cellRadius
+                targetCell.scale = cellRadius * 0.8  // Start slightly smaller
                 targetCell.position = invaderCell.position
             }
         } else if targetCell.animationState == .dividing && invaderCell.animationState == .dividing {
             // Color change and division phase
-            let colorChangeDuration: Float = 1.5
-            let divideDuration: Float = 2.0
+            let colorChangeDuration: Float = 1.2
+            let divideDuration: Float = 1.8
             let totalDuration = colorChangeDuration + divideDuration
             let totalProgress = (time - targetCell.divideStartTime) / totalDuration
 
             if totalProgress < colorChangeDuration / totalDuration {
                 // Phase 1: Color change (red -> blue) while cells stay together
                 let colorProgress = (time - targetCell.divideStartTime) / colorChangeDuration
+                let easedColor = easeInOutCubic(colorProgress)
+
+                // Smooth color transition
                 invaderCell.color = mix(SIMD4<Float>(0.9, 0.3, 0.2, 0.9),
                                        SIMD4<Float>(0.3, 0.5, 0.9, 0.9),
-                                       t: colorProgress)
+                                       t: easedColor)
+
+                // Pulsate during color change
+                let pulse = sin(colorProgress * .pi * 8.0) * 0.1
+                invaderCell.scale = cellRadius * 0.8 * (1.0 + pulse)
+                targetCell.scale = cellRadius * 0.8 * (1.0 + pulse)
+
             } else if totalProgress < 1.0 {
                 // Phase 2: Division after color change
                 let divideProgress = (time - targetCell.divideStartTime - colorChangeDuration) / divideDuration
+                let easedDivide = easeOutCubic(divideProgress)
 
                 // Ensure color is fully blue
                 invaderCell.color = SIMD4<Float>(0.3, 0.5, 0.9, 0.9)
+                targetCell.color = SIMD4<Float>(0.3, 0.5, 0.9, 0.9)
 
                 // Get initial positions
                 let mergePos = (targetCell.position + invaderCell.position) * 0.5
@@ -412,13 +443,19 @@ class MetalRenderer: NSObject, MTKViewDelegate {
                     targetPos2 = worldPosition(for: divisionTargetsNormalized[1][1])   // Slightly right and up
                 }
 
-                targetCell.position = mix(mergePos, targetPos1, t: divideProgress)
-                invaderCell.position = mix(mergePos, targetPos2, t: divideProgress)
+                targetCell.position = mix(mergePos, targetPos1, t: easedDivide)
+                invaderCell.position = mix(mergePos, targetPos2, t: easedDivide)
 
-                // Scale during division - return to normal size
-                let scale = cellRadius * (0.6 + 0.4 * divideProgress)  // Scale from 0.6 to 1.0 of cellRadius
+                // Scale during division - return to normal size with bounce effect
+                let bounceScale = 1.0 + sin(divideProgress * .pi) * 0.15
+                let scale = cellRadius * (0.8 + 0.2 * easedDivide) * bounceScale
                 targetCell.scale = scale
                 invaderCell.scale = scale
+
+                // Add subtle rotation during division
+                targetCell.rotation += 0.02
+                invaderCell.rotation += 0.02
+
             } else {
                 // Division complete, stop animation
                 isAnimationRunning = false
@@ -439,6 +476,24 @@ func mix(_ a: SIMD3<Float>, _ b: SIMD3<Float>, t: Float) -> SIMD3<Float> {
 
 func mix(_ a: SIMD4<Float>, _ b: SIMD4<Float>, t: Float) -> SIMD4<Float> {
     return a * (1.0 - t) + b * t
+}
+
+// Easing functions for smooth animations
+func easeInOut(_ t: Float) -> Float {
+    return t < 0.5 ? 2.0 * t * t : 1.0 - pow(-2.0 * t + 2.0, 2.0) / 2.0
+}
+
+func easeInCubic(_ t: Float) -> Float {
+    return t * t * t
+}
+
+func easeOutCubic(_ t: Float) -> Float {
+    let t1 = 1.0 - t
+    return 1.0 - t1 * t1 * t1
+}
+
+func easeInOutCubic(_ t: Float) -> Float {
+    return t < 0.5 ? 4.0 * t * t * t : 1.0 - pow(-2.0 * t + 2.0, 3.0) / 2.0
 }
 
 // Matrix helpers
