@@ -18,6 +18,7 @@ class Cell {
     var color: SIMD4<Float>
     var type: CellType
     var scale: Float = 1.0
+    var baseScale: Float = 1.0  // Store base scale for pulsation effects
     var rotation: Float = 0.0
 
     var animationState: AnimationState = .moving
@@ -237,7 +238,7 @@ class Cell {
             let pulseSpeed: Float = 4.0
             let pulseAmount: Float = 0.08
             let pulse = sin(time * pulseSpeed) * pulseAmount
-            scale = scale * (1.0 + pulse)
+            scale = baseScale * (1.0 + pulse)  // Apply pulse to base scale, not current scale
 
             // Subtle hover movement
             let floatOffset = sin(time * 2.0) * 0.015

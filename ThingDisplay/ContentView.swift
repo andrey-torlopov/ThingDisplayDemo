@@ -15,18 +15,27 @@ struct ContentView: View {
     @State private var hideLabelsTask: DispatchWorkItem?
     @State private var showStartButton = true
 
+    init() {
+        print("🏁 ContentView.init() called")
+    }
+
     var body: some View {
-        ZStack {
+        let _ = print("🎨 ContentView.body evaluated")
+        return ZStack {
             // Metal rendering view
             MetalView(
                 cellPositions: $cellPositions,
                 onRendererReady: { metalRenderer in
-                    renderer = metalRenderer
-                    // Set up animation completion callback
-                    metalRenderer.onAnimationComplete = {
-                        DispatchQueue.main.async {
-                            withAnimation(.easeIn(duration: 0.5)) {
-                                showStartButton = true
+                    print("✨ MetalRenderer initialized and ready")
+                    // Use DispatchQueue to avoid "Modifying state during view update" warning
+                    DispatchQueue.main.async {
+                        renderer = metalRenderer
+                        // Set up animation completion callback
+                        metalRenderer.onAnimationComplete = {
+                            DispatchQueue.main.async {
+                                withAnimation(.easeIn(duration: 0.5)) {
+                                    showStartButton = true
+                                }
                             }
                         }
                     }
@@ -94,6 +103,8 @@ struct ContentView: View {
     }
 
     private func startAnimationSequence() {
+        print("🚀 startAnimationSequence() called, renderer is: \(renderer == nil ? "nil" : "initialized")")
+
         // Cancel previous hide task if exists
         hideLabelsTask?.cancel()
 
@@ -103,7 +114,12 @@ struct ContentView: View {
         }
 
         // Restart animation
-        renderer?.startAnimation()
+        if let renderer = renderer {
+            print("🎯 Calling renderer.startAnimation()")
+            renderer.startAnimation()
+        } else {
+            print("❌ ERROR: renderer is nil!")
+        }
 
         // Schedule hiding labels and starting merge after 2 seconds
         let task = DispatchWorkItem { [self] in

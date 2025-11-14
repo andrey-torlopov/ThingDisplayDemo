@@ -47,10 +47,19 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     ]
 
     init?(metalView: MTKView) {
-        guard let device = MTLCreateSystemDefaultDevice(),
-              let commandQueue = device.makeCommandQueue() else {
+        print("🔧 MetalRenderer init started")
+
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            print("❌ FAILED: Could not create Metal device")
             return nil
         }
+        print("✅ Metal device created")
+
+        guard let commandQueue = device.makeCommandQueue() else {
+            print("❌ FAILED: Could not create command queue")
+            return nil
+        }
+        print("✅ Command queue created")
 
         self.device = device
         self.commandQueue = commandQueue
@@ -61,10 +70,18 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         metalView.delegate = self
         metalView.clearColor = MTLClearColor(red: 0.05, green: 0.05, blue: 0.1, alpha: 1.0)
         metalView.depthStencilPixelFormat = .depth32Float
+        print("✅ MTKView configured")
 
         buildPipeline(metalView: metalView)
+        print("✅ Pipeline built")
+
         buildDepthStencilState()
+        print("✅ Depth stencil state built")
+
         setupCells()
+        print("✅ Cells setup complete")
+
+        print("🎉 MetalRenderer initialization complete!")
     }
 
     func buildPipeline(metalView: MTKView) {
@@ -162,12 +179,14 @@ class MetalRenderer: NSObject, MTKViewDelegate {
             cells[index].position = position
             cells[index].initialPosition = position
             cells[index].scale = cellRadius
+            cells[index].baseScale = cellRadius
         }
 
         let invaderPosition = worldPosition(for: invaderNormalizedStart)
         cells[2].position = invaderPosition
         cells[2].initialPosition = invaderPosition
         cells[2].scale = cellRadius
+        cells[2].baseScale = cellRadius
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
@@ -193,13 +212,25 @@ class MetalRenderer: NSObject, MTKViewDelegate {
             cell.position.x *= aspectScale
             cell.initialPosition.x *= aspectScale
             cell.scale *= radiusScale
+            cell.baseScale *= radiusScale
         }
     }
 
     func draw(in view: MTKView) {
         // Only increment time if animation is running
         if isAnimationRunning {
+            let oldTime = time
             time += 1.0 / 60.0
+
+            // Log first few frames to verify animation starts
+            if time < 0.5 {
+                print("🎞️ Frame update. Time: \(String(format: "%.3f", oldTime)) → \(String(format: "%.3f", time)), isAnimationRunning: \(isAnimationRunning)")
+            }
+        } else {
+            // Log when animation is NOT running
+            if Int.random(in: 0..<120) == 0 {
+                print("⏸️ Animation NOT running. isAnimationRunning: \(isAnimationRunning)")
+            }
         }
         updateCells()
 
@@ -280,11 +311,18 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     func startAnimation() {
+        print("🎬 startAnimation() called")
         isAnimationRunning = true
         resetCells()
+        print("✅ Animation started. isAnimationRunning: \(isAnimationRunning), time: \(time)")
     }
 
     func resetCells() {
+        print("🔄 resetCells() called")
+
+        // Reset time FIRST before changing states
+        time = 0
+
         // Reset all cells to initial state (normalized screen coordinates)
         cells[0].animationState = .moving
         cells[1].animationState = .moving
@@ -302,8 +340,11 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         // Choose new random target
         targetHealthyCellIndex = Int.random(in: 0...1)
 
-        // Reset time for animation restart
-        time = 0
+        print("📊 Reset complete. Target cell: \(targetHealthyCellIndex), cells states: \(cells.map { $0.animationState })")
+        print("   Cell[0] pos: \(cells[0].position), state: \(cells[0].animationState)")
+        print("   Cell[1] pos: \(cells[1].position), state: \(cells[1].animationState)")
+        print("   Cell[2] pos: \(cells[2].position), state: \(cells[2].animationState)")
+        print("   AspectRatio: \(aspectRatio), CellRadius: \(cellRadius)")
     }
 
     func updateCells() {
@@ -322,6 +363,11 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         let targetCell = cells[targetHealthyCellIndex]
         let invaderCell = cells[2]
 
+        // Debug log - verbose for first 3 seconds, then every second
+        if time < 3.0 || Int(time * 60.0).isMultiple(of: 60) {
+            print("⏱️ Animation running. Time: \(String(format: "%.2f", time)), Target[\(targetHealthyCellIndex)] state: \(targetCell.animationState), Invader state: \(invaderCell.animationState)")
+        }
+
         // Animation state machine
         if targetCell.animationState == .moving && invaderCell.animationState == .moving {
             // Move invader towards target healthy cell with acceleration
@@ -333,14 +379,22 @@ class MetalRenderer: NSObject, MTKViewDelegate {
 
             // Invader moves to target from position (0.58, 0.5) in screen space
             let startPos = worldPosition(for: invaderNormalizedStart)
-            invaderCell.position = mix(startPos, targetCell.position, t: easedProgress)
+            let targetPos = targetCell.initialPosition  // Use initial position, not current (which has floating)
+            invaderCell.position = mix(startPos, targetPos, t: easedProgress)
 
             // Scale invader slightly as it approaches (getting ready to attack)
             let approachScale = 1.0 + sin(moveProgress * .pi) * 0.15
             invaderCell.scale = cellRadius * approachScale
+            invaderCell.baseScale = cellRadius * approachScale
 
-            let distance = simd_distance(targetCell.position, invaderCell.position)
+            let distance = simd_distance(targetPos, invaderCell.position)
+
+            // Log progress during movement
+            if time < 3.0 && Int(time * 60.0) % 30 == 0 {
+                print("   Moving phase: progress=\(String(format: "%.2f", moveProgress)), distance=\(String(format: "%.3f", distance))")
+            }
             if distance < 0.05 || moveProgress >= 1.0 {
+                print("🔄 TRANSITION: moving → merging. Distance: \(String(format: "%.3f", distance)), Progress: \(String(format: "%.2f", moveProgress))")
                 targetCell.animationState = .merging
                 invaderCell.animationState = .merging
                 targetCell.mergeStartTime = time
@@ -359,6 +413,7 @@ class MetalRenderer: NSObject, MTKViewDelegate {
 
                 // Healthy cell shrinks as it's absorbed with spiral motion
                 targetCell.scale = cellRadius * (1.0 - easedMerge)
+                targetCell.baseScale = cellRadius * (1.0 - easedMerge)
 
                 // Add spiral motion to absorbed cell
                 let spiralAngle = mergeProgress * .pi * 4.0
@@ -374,6 +429,7 @@ class MetalRenderer: NSObject, MTKViewDelegate {
                 // Invader grows and pulses during absorption
                 let pulsation = sin(mergeProgress * .pi * 6.0) * 0.05
                 invaderCell.scale = cellRadius * (1.0 + 0.3 * mergeProgress + pulsation)
+                invaderCell.baseScale = cellRadius * (1.0 + 0.3 * mergeProgress)
 
                 // At halfway point, change invader form to sphere
                 if mergeProgress > 0.5 && invaderCell.type == .invader {
@@ -386,6 +442,7 @@ class MetalRenderer: NSObject, MTKViewDelegate {
                 invaderCell.rotation += 0.08
             } else {
                 // Absorption complete, start color change and then dividing
+                print("🔄 TRANSITION: merging → dividing. Merge progress: 1.0")
                 targetCell.animationState = .dividing
                 invaderCell.animationState = .dividing
                 targetCell.divideStartTime = time
@@ -393,6 +450,7 @@ class MetalRenderer: NSObject, MTKViewDelegate {
 
                 // Reset target cell to prepare for division
                 targetCell.scale = cellRadius * 0.8  // Start slightly smaller
+                targetCell.baseScale = cellRadius * 0.8
                 targetCell.position = invaderCell.position
             }
         } else if targetCell.animationState == .dividing && invaderCell.animationState == .dividing {
@@ -415,7 +473,9 @@ class MetalRenderer: NSObject, MTKViewDelegate {
                 // Pulsate during color change
                 let pulse = sin(colorProgress * .pi * 8.0) * 0.1
                 invaderCell.scale = cellRadius * 0.8 * (1.0 + pulse)
+                invaderCell.baseScale = cellRadius * 0.8
                 targetCell.scale = cellRadius * 0.8 * (1.0 + pulse)
+                targetCell.baseScale = cellRadius * 0.8
 
             } else if totalProgress < 1.0 {
                 // Phase 2: Division after color change
@@ -448,9 +508,12 @@ class MetalRenderer: NSObject, MTKViewDelegate {
 
                 // Scale during division - return to normal size with bounce effect
                 let bounceScale = 1.0 + sin(divideProgress * .pi) * 0.15
-                let scale = cellRadius * (0.8 + 0.2 * easedDivide) * bounceScale
+                let baseScale = cellRadius * (0.8 + 0.2 * easedDivide)
+                let scale = baseScale * bounceScale
                 targetCell.scale = scale
+                targetCell.baseScale = baseScale
                 invaderCell.scale = scale
+                invaderCell.baseScale = baseScale
 
                 // Add subtle rotation during division
                 targetCell.rotation += 0.02
@@ -458,6 +521,7 @@ class MetalRenderer: NSObject, MTKViewDelegate {
 
             } else {
                 // Division complete, stop animation
+                print("✅ ANIMATION COMPLETE! Total time: \(String(format: "%.2f", time))s")
                 isAnimationRunning = false
                 onAnimationComplete?()
             }

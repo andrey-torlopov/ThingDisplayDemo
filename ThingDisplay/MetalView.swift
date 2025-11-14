@@ -6,12 +6,15 @@ struct MetalView: UIViewRepresentable {
     var onRendererReady: ((MetalRenderer) -> Void)?
 
     func makeUIView(context: Context) -> MTKView {
+        print("🏗️ makeUIView called - creating MTKView")
         let mtkView = MTKView()
         mtkView.preferredFramesPerSecond = 60
         mtkView.enableSetNeedsDisplay = false
         mtkView.isPaused = false
 
+        print("🏗️ Attempting to create MetalRenderer...")
         if let renderer = MetalRenderer(metalView: mtkView) {
+            print("✅ MetalRenderer created successfully!")
             context.coordinator.renderer = renderer
             renderer.onCellPositionsUpdated = { positions in
                 DispatchQueue.main.async {
@@ -19,6 +22,8 @@ struct MetalView: UIViewRepresentable {
                 }
             }
             onRendererReady?(renderer)
+        } else {
+            print("❌ CRITICAL ERROR: MetalRenderer initialization FAILED!")
         }
 
         return mtkView

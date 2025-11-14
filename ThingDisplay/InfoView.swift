@@ -38,6 +38,7 @@ struct InfoView: View {
                     .padding(.bottom, 50)
                 }
             }
+            .frame(maxWidth: .infinity)
             .background(Color.black.opacity(0.95))
             .scrollContentBackground(.hidden)
             .navigationBarTitleDisplayMode(.inline)
