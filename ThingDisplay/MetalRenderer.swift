@@ -184,8 +184,8 @@ class MetalRenderer: NSObject, MTKViewDelegate {
             cells[index].baseScale = healthyCellScale
         }
 
-        // Invader cell - 30% larger
-        let invaderScale = cellRadius * 1.3
+        // Invader cell - 40% larger
+        let invaderScale = cellRadius * 1.4
         let invaderPosition = worldPosition(for: invaderNormalizedStart)
         cells[2].position = invaderPosition
         cells[2].initialPosition = invaderPosition

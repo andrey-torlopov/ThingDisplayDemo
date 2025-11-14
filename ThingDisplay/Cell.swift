@@ -19,7 +19,10 @@ class Cell {
     var type: CellType
     var scale: Float = 1.0
     var baseScale: Float = 1.0  // Store base scale for pulsation effects
-    var rotation: Float = 0.0
+    var rotation: Float = 0.0  // For backward compatibility (Z-axis rotation)
+    var rotationX: Float = 0.0
+    var rotationY: Float = 0.0
+    var rotationZ: Float = 0.0
 
     var animationState: AnimationState = .moving
     var mergeStartTime: Float = 0
@@ -231,8 +234,11 @@ class Cell {
     func update(time: Float) {
         // Animation effects based on cell type and state
         if type == .invader && animationState == .moving {
-            // Aggressive rotation for invader
-            rotation += 0.03
+            // Aggressive 3D rotation for invader - rotate on all axes
+            rotationX += 0.025
+            rotationY += 0.03
+            rotationZ += 0.02
+            rotation = rotationZ  // Keep for backward compatibility
 
             // Pulsing effect - invader breathes menacingly
             let pulseSpeed: Float = 4.0
@@ -246,6 +252,7 @@ class Cell {
         } else if type == .healthy && animationState == .moving {
             // Gentle floating animation for healthy cells
             rotation += 0.01
+            rotationY += 0.01
             // Add subtle floating effect relative to initial position
             let floatOffset = sin(time * 0.5 + initialPosition.y * 3.0) * 0.02
             position.y = initialPosition.y + floatOffset
@@ -265,28 +272,36 @@ class Cell {
         let translationMatrix = float4x4(translation: position)
         let scaleMatrix = float4x4(scale: SIMD3<Float>(repeating: scale))
 
-        // Rotation - invader rotates around Z axis (perpendicular to view), healthy around Y
-        let c = cos(rotation)
-        let s = sin(rotation)
-        let rotationMatrix: float4x4
+        // Create rotation matrices for each axis
+        let cx = cos(rotationX)
+        let sx = sin(rotationX)
+        let rotationMatrixX = float4x4(
+            SIMD4<Float>(1, 0, 0, 0),
+            SIMD4<Float>(0, cx, -sx, 0),
+            SIMD4<Float>(0, sx, cx, 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        )
 
-        if type == .invader {
-            // Rotate around Z axis (flat rotation in screen plane)
-            rotationMatrix = float4x4(
-                SIMD4<Float>(c, -s, 0, 0),
-                SIMD4<Float>(s, c, 0, 0),
-                SIMD4<Float>(0, 0, 1, 0),
-                SIMD4<Float>(0, 0, 0, 1)
-            )
-        } else {
-            // Rotate around Y axis
-            rotationMatrix = float4x4(
-                SIMD4<Float>(c, 0, s, 0),
-                SIMD4<Float>(0, 1, 0, 0),
-                SIMD4<Float>(-s, 0, c, 0),
-                SIMD4<Float>(0, 0, 0, 1)
-            )
-        }
+        let cy = cos(rotationY)
+        let sy = sin(rotationY)
+        let rotationMatrixY = float4x4(
+            SIMD4<Float>(cy, 0, sy, 0),
+            SIMD4<Float>(0, 1, 0, 0),
+            SIMD4<Float>(-sy, 0, cy, 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        )
+
+        let cz = cos(rotationZ)
+        let sz = sin(rotationZ)
+        let rotationMatrixZ = float4x4(
+            SIMD4<Float>(cz, -sz, 0, 0),
+            SIMD4<Float>(sz, cz, 0, 0),
+            SIMD4<Float>(0, 0, 1, 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        )
+
+        // Combine rotations (order: X * Y * Z)
+        let rotationMatrix = rotationMatrixX * rotationMatrixY * rotationMatrixZ
 
         let modelMatrix = translationMatrix * rotationMatrix * scaleMatrix
 
