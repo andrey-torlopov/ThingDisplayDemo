@@ -174,19 +174,23 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     private func applyBaseLayout() {
         guard cells.count == 3 else { return }
 
+        // Healthy cells - 20% smaller
+        let healthyCellScale = cellRadius * 0.8
         for index in 0..<2 {
             let position = worldPosition(for: healthyCellNormalizedPositions[index])
             cells[index].position = position
             cells[index].initialPosition = position
-            cells[index].scale = cellRadius
-            cells[index].baseScale = cellRadius
+            cells[index].scale = healthyCellScale
+            cells[index].baseScale = healthyCellScale
         }
 
+        // Invader cell - 30% larger
+        let invaderScale = cellRadius * 1.3
         let invaderPosition = worldPosition(for: invaderNormalizedStart)
         cells[2].position = invaderPosition
         cells[2].initialPosition = invaderPosition
-        cells[2].scale = cellRadius
-        cells[2].baseScale = cellRadius
+        cells[2].scale = invaderScale
+        cells[2].baseScale = invaderScale
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
@@ -331,11 +335,16 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         applyBaseLayout()
 
         cells[0].color = SIMD4<Float>(0.3, 0.5, 0.9, 0.9)
-        cells[1].color = SIMD4<Float>(0.3, 0.5, 0.9, 0.9)
-        cells[2].color = SIMD4<Float>(0.9, 0.3, 0.2, 0.9)
+        cells[0].rotation = 0
 
+        cells[1].color = SIMD4<Float>(0.3, 0.5, 0.9, 0.9)
+        cells[1].rotation = 0
+
+        cells[2].color = SIMD4<Float>(0.9, 0.3, 0.2, 0.9)
         cells[2].type = .invader
         cells[2].createGeometry(device: device)
+        // Rotate invader to show its angular shape better (30 degrees)
+        cells[2].rotation = .pi / 6.0
 
         // Choose new random target
         targetHealthyCellIndex = Int.random(in: 0...1)
@@ -407,29 +416,21 @@ class MetalRenderer: NSObject, MTKViewDelegate {
             let easedMerge = easeInOutCubic(mergeProgress)
 
             if mergeProgress < 1.0 {
-                // Invader stays in place, healthy cell shrinks and moves into invader
+                // Invader stays in place, healthy cell shrinks and is absorbed
                 let mergePos = invaderCell.position
-                targetCell.position = mix(targetCell.position, mergePos, t: easedMerge)
+                targetCell.position = mix(targetCell.initialPosition, mergePos, t: easedMerge)
 
-                // Healthy cell shrinks as it's absorbed with spiral motion
+                // Healthy cell shrinks as it's absorbed (simple disappearance)
                 targetCell.scale = cellRadius * (1.0 - easedMerge)
                 targetCell.baseScale = cellRadius * (1.0 - easedMerge)
 
-                // Add spiral motion to absorbed cell
-                let spiralAngle = mergeProgress * .pi * 4.0
-                let spiralRadius = (1.0 - mergeProgress) * 0.1
-                let offsetX = cos(spiralAngle) * spiralRadius
-                let offsetY = sin(spiralAngle) * spiralRadius
-                targetCell.position.x += offsetX
-                targetCell.position.y += offsetY
+                // Gentle rotation during absorption (not too fast)
+                targetCell.rotation += 0.02
 
-                // Rotate absorbed cell faster as it's consumed
-                targetCell.rotation += 0.1 * (1.0 + mergeProgress * 3.0)
-
-                // Invader grows and pulses during absorption
-                let pulsation = sin(mergeProgress * .pi * 6.0) * 0.05
-                invaderCell.scale = cellRadius * (1.0 + 0.3 * mergeProgress + pulsation)
-                invaderCell.baseScale = cellRadius * (1.0 + 0.3 * mergeProgress)
+                // Invader grows smoothly during absorption
+                let pulsation = sin(mergeProgress * .pi * 4.0) * 0.03
+                invaderCell.scale = cellRadius * (1.0 + 0.2 * mergeProgress + pulsation)
+                invaderCell.baseScale = cellRadius * (1.0 + 0.2 * mergeProgress)
 
                 // At halfway point, change invader form to sphere
                 if mergeProgress > 0.5 && invaderCell.type == .invader {
