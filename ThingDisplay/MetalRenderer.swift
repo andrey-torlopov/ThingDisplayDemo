@@ -27,12 +27,24 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     var onCellPositionsUpdated: (([CellLabelData]) -> Void)?
     var onAnimationComplete: (() -> Void)?
     private var viewSize: CGSize = .zero
+    private var aspectRatio: Float = 1.0
 
     // Target cell for invader
     private var targetHealthyCellIndex: Int = 0
 
     // Cell size expressed in normalized world coordinates (0...1 range)
     private var cellRadius: Float = 0.1
+
+    // Layout constants in screen-normalized coordinates (0...1)
+    private let healthyCellNormalizedPositions: [SIMD2<Float>] = [
+        SIMD2<Float>(0.28, 0.35),
+        SIMD2<Float>(0.28, 0.65)
+    ]
+    private let invaderNormalizedStart = SIMD2<Float>(0.58, 0.5)
+    private let divisionTargetsNormalized: [[SIMD2<Float>]] = [
+        [SIMD2<Float>(0.22, 0.30), SIMD2<Float>(0.36, 0.42)],
+        [SIMD2<Float>(0.22, 0.60), SIMD2<Float>(0.36, 0.72)]
+    ]
 
     init?(metalView: MTKView) {
         guard let device = MTLCreateSystemDefaultDevice(),
@@ -105,14 +117,14 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         // Two healthy cells (blue) - positioned on the left side
         // These positions will be updated based on actual aspect ratio
         let healthyCell1 = Cell(
-            position: SIMD3<Float>(0.15, 0.35, 0),
+            position: SIMD3<Float>(0, 0, 0),
             color: SIMD4<Float>(0.3, 0.5, 0.9, 0.9),
             type: .healthy,
             device: device
         )
 
         let healthyCell2 = Cell(
-            position: SIMD3<Float>(0.15, 0.65, 0),
+            position: SIMD3<Float>(0, 0, 0),
             color: SIMD4<Float>(0.3, 0.5, 0.9, 0.9),
             type: .healthy,
             device: device
@@ -120,7 +132,7 @@ class MetalRenderer: NSObject, MTKViewDelegate {
 
         // Invader cell (red-orange, angular) - positioned on the right side
         let invaderCell = Cell(
-            position: SIMD3<Float>(0.35, 0.5, 0),
+            position: SIMD3<Float>(0, 0, 0),
             color: SIMD4<Float>(0.9, 0.3, 0.2, 0.9),
             type: .invader,
             device: device
@@ -128,19 +140,59 @@ class MetalRenderer: NSObject, MTKViewDelegate {
 
         cells = [healthyCell1, healthyCell2, invaderCell]
 
+        applyBaseLayout()
+
         // Randomly choose target healthy cell (0 or 1)
         targetHealthyCellIndex = Int.random(in: 0...1)
+    }
+
+    private func worldPosition(normalizedX: Float, normalizedY: Float) -> SIMD3<Float> {
+        return SIMD3<Float>(normalizedX * aspectRatio, normalizedY, 0)
+    }
+
+    private func worldPosition(for normalized: SIMD2<Float>) -> SIMD3<Float> {
+        return worldPosition(normalizedX: normalized.x, normalizedY: normalized.y)
+    }
+
+    private func applyBaseLayout() {
+        guard cells.count == 3 else { return }
+
+        for index in 0..<2 {
+            let position = worldPosition(for: healthyCellNormalizedPositions[index])
+            cells[index].position = position
+            cells[index].initialPosition = position
+            cells[index].scale = cellRadius
+        }
+
+        let invaderPosition = worldPosition(for: invaderNormalizedStart)
+        cells[2].position = invaderPosition
+        cells[2].initialPosition = invaderPosition
+        cells[2].scale = cellRadius
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         viewSize = size
 
-        // In normalized 0...1 world coordinates we keep a constant radius
-        cellRadius = 0.1
+        guard size.height > 0 else { return }
 
-        // Update all cells scale
+        let previousAspect = aspectRatio
+        let previousRadius = cellRadius
+
+        aspectRatio = max(Float(size.width / size.height), 0.0001)
+
+        let baseRadius: Float = 0.12
+        let leftMargin = worldPosition(for: healthyCellNormalizedPositions[0]).x
+        let rightMargin = aspectRatio - worldPosition(for: invaderNormalizedStart).x
+        let safeHorizontalRadius = min(leftMargin, rightMargin) * 0.85
+        cellRadius = max(0.075, min(baseRadius, safeHorizontalRadius))
+
+        let aspectScale = previousAspect > 0 ? aspectRatio / previousAspect : 1.0
+        let radiusScale = previousRadius > 0 ? cellRadius / previousRadius : 1.0
+
         for cell in cells {
-            cell.scale = cellRadius
+            cell.position.x *= aspectScale
+            cell.initialPosition.x *= aspectScale
+            cell.scale *= radiusScale
         }
     }
 
@@ -160,10 +212,10 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         renderEncoder.setRenderPipelineState(pipelineState)
         renderEncoder.setDepthStencilState(depthState)
 
-        // Use orthographic projection that maps 0...1 in both X and Y to the viewport
+        // Use orthographic projection that maps 0...aspect in X and 0...1 in Y to the viewport
         let projectionMatrix = float4x4(
             orthographicWithLeft: 0,
-            right: 1,
+            right: aspectRatio,
             bottom: 0,
             top: 1,
             near: -1,
@@ -171,7 +223,7 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         )
 
         // Camera looking straight down (2D view) with identity view matrix
-        let cameraPosition = SIMD3<Float>(0.5, 0.5, 1.0)
+        let cameraPosition = SIMD3<Float>(aspectRatio * 0.5, 0.5, 1.0)
         let viewMatrix = matrix_identity_float4x4
 
         // Render all cells
@@ -238,17 +290,7 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         cells[1].animationState = .moving
         cells[2].animationState = .moving
 
-        cells[0].scale = cellRadius
-        cells[1].scale = cellRadius
-        cells[2].scale = cellRadius
-
-        cells[0].position = SIMD3<Float>(0.15, 0.35, 0)
-        cells[1].position = SIMD3<Float>(0.15, 0.65, 0)
-        cells[2].position = SIMD3<Float>(0.35, 0.5, 0)
-
-        cells[0].initialPosition = SIMD3<Float>(0.15, 0.35, 0)
-        cells[1].initialPosition = SIMD3<Float>(0.15, 0.65, 0)
-        cells[2].initialPosition = SIMD3<Float>(0.35, 0.5, 0)
+        applyBaseLayout()
 
         cells[0].color = SIMD4<Float>(0.3, 0.5, 0.9, 0.9)
         cells[1].color = SIMD4<Float>(0.3, 0.5, 0.9, 0.9)
@@ -286,8 +328,8 @@ class MetalRenderer: NSObject, MTKViewDelegate {
             let moveDuration: Float = 3.0
             let moveProgress = min(time / moveDuration, 1.0)
 
-            // Invader moves to target from position (0.35, 0.5)
-            let startPos = SIMD3<Float>(0.35, 0.5, 0)
+            // Invader moves to target from position (0.58, 0.5) in screen space
+            let startPos = worldPosition(for: invaderNormalizedStart)
             invaderCell.position = mix(startPos, targetCell.position, t: moveProgress)
 
             let distance = simd_distance(targetCell.position, invaderCell.position)
@@ -361,13 +403,13 @@ class MetalRenderer: NSObject, MTKViewDelegate {
                 let targetPos2: SIMD3<Float>
 
                 if targetHealthyCellIndex == 0 {
-                    // Target was at (0.15, 0.35) - cells move apart
-                    targetPos1 = SIMD3<Float>(0.10, 0.30, 0)   // Slightly left and down
-                    targetPos2 = SIMD3<Float>(0.20, 0.40, 0)   // Slightly right and up
+                    // Target was at (0.28, 0.35) - cells move apart
+                    targetPos1 = worldPosition(for: divisionTargetsNormalized[0][0])   // Slightly left and down
+                    targetPos2 = worldPosition(for: divisionTargetsNormalized[0][1])   // Slightly right and up
                 } else {
-                    // Target was at (0.15, 0.65) - cells move apart
-                    targetPos1 = SIMD3<Float>(0.10, 0.60, 0)   // Slightly left and down
-                    targetPos2 = SIMD3<Float>(0.20, 0.70, 0)   // Slightly right and up
+                    // Target was at (0.28, 0.65) - cells move apart
+                    targetPos1 = worldPosition(for: divisionTargetsNormalized[1][0])   // Slightly left and down
+                    targetPos2 = worldPosition(for: divisionTargetsNormalized[1][1])   // Slightly right and up
                 }
 
                 targetCell.position = mix(mergePos, targetPos1, t: divideProgress)
