@@ -31,8 +31,8 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     // Target cell for invader
     private var targetHealthyCellIndex: Int = 0
 
-    // Cell size - 20% of min(width, height)
-    private var cellRadius: Float = 0.2
+    // Cell size expressed in normalized world coordinates (0...1 range)
+    private var cellRadius: Float = 0.1
 
     init?(metalView: MTKView) {
         guard let device = MTLCreateSystemDefaultDevice(),
@@ -135,9 +135,8 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         viewSize = size
 
-        // Update cell radius based on screen size (20% of min dimension)
-        let minDimension = Float(min(size.width, size.height))
-        cellRadius = 0.2 * (minDimension / Float(size.height))
+        // In normalized 0...1 world coordinates we keep a constant radius
+        cellRadius = 0.1
 
         // Update all cells scale
         for cell in cells {
@@ -161,22 +160,19 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         renderEncoder.setRenderPipelineState(pipelineState)
         renderEncoder.setDepthStencilState(depthState)
 
-        let aspect = Float(view.bounds.width / view.bounds.height)
-        // Use orthographic projection for 2D-like positioning
+        // Use orthographic projection that maps 0...1 in both X and Y to the viewport
         let projectionMatrix = float4x4(
             orthographicWithLeft: 0,
-            right: aspect,
+            right: 1,
             bottom: 0,
             top: 1,
-            near: -10,
-            far: 10
+            near: -1,
+            far: 1
         )
 
-        // Camera looking straight down (2D view)
-        let cameraPosition = SIMD3<Float>(aspect * 0.5, 0.5, 5)
-        let viewMatrix = float4x4(lookAt: cameraPosition,
-                                   target: SIMD3<Float>(aspect * 0.5, 0.5, 0),
-                                   up: SIMD3<Float>(0, 1, 0))
+        // Camera looking straight down (2D view) with identity view matrix
+        let cameraPosition = SIMD3<Float>(0.5, 0.5, 1.0)
+        let viewMatrix = matrix_identity_float4x4
 
         // Render all cells
         for cell in cells {
